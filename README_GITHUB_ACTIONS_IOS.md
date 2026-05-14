@@ -7,7 +7,7 @@
 
 ## 已提供的工作流
 - `.github/workflows/build-web.yml`
-- `.github/workflows/ios-simulator-smoke.yml`
+- `.github/workflows/ios-smoke-test.yml`
 
 ## 你需要在 GitHub 仓库里配置的 Secrets
 - `IOS_API_BASE_URL`

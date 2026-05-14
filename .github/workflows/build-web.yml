@@ -28,21 +28,26 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
+        env:
+          npm_config_registry: https://registry.npmjs.org
         run: npm ci
 
       - name: Build web assets
-        run: npm run build
+        run: npm run build:web
 
       - name: Build iOS web assets
         env:
-          VITE_API_URL: ${{ secrets.IOS_API_BASE_URL != '' && secrets.IOS_API_BASE_URL || 'http://114.132.68.81:8000/api' }}
+          VITE_API_URL: ${{ secrets.IOS_API_BASE_URL }}
         run: npm run build:ios
 
       - name: Upload dist artifact
         uses: actions/upload-artifact@v4
         with:
           name: web-dist
-          path: dist
+          path: |
+            dist-web
+            dist
           retention-days: 5

@@ -14,11 +14,11 @@ permissions:
   contents: read
 
 concurrency:
-  group: ios-simulator-smoke-${{ github.ref }}
+  group: ios-smoke-test-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  ios-simulator-smoke:
+  ios-smoke-test:
     runs-on: macos-latest
     timeout-minutes: 30
     env:
@@ -28,7 +28,7 @@ jobs:
       IOS_APP_BUNDLE_ID: com.police.exam
       IOS_SIMULATOR_NAME: iPhone 16
       IOS_SIMULATOR_RUNTIME_PREFIX: com.apple.CoreSimulator.SimRuntime.iOS-18
-      IOS_API_BASE_URL: ${{ secrets.IOS_API_BASE_URL != '' && secrets.IOS_API_BASE_URL || 'http://114.132.68.81:8000/api' }}
+      IOS_API_BASE_URL: ${{ secrets.IOS_API_BASE_URL }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -38,8 +38,11 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
+        env:
+          npm_config_registry: https://registry.npmjs.org
         run: npm ci
 
       - name: Build iOS web assets
@@ -70,6 +73,7 @@ jobs:
           xcrun simctl list devices available > artifacts/simctl-devices.txt
 
       - name: Boot simulator
+        shell: bash
         run: |
           UDID="$(python3 - <<'PY'
 import json
@@ -128,6 +132,7 @@ PY
           } > artifacts/simulator-boot.txt
 
       - name: Build iOS app for simulator
+        shell: bash
         run: |
           set -o pipefail
           xcodebuild \
@@ -142,6 +147,7 @@ PY
             build | tee artifacts/xcodebuild.log
 
       - name: Install and launch app
+        shell: bash
         run: |
           APP_PATH="$(find "$IOS_DERIVED_DATA/Build/Products" -path "*iphonesimulator/App.app" | head -n 1)"
           if [ -z "$APP_PATH" ]; then
@@ -155,6 +161,7 @@ PY
 
       - name: Capture simulator evidence
         if: always()
+        shell: bash
         run: |
           xcrun simctl io "$SIMULATOR_UDID" screenshot artifacts/ios-simulator.png || true
           xcrun simctl spawn "$SIMULATOR_UDID" log collect --output /tmp/app-logarchive.logarchive || true
