@@ -1,4 +1,5 @@
-name: iOS Simulator Smoke
+name: iOS Smoke Test
+run-name: "iOS Smoke Test · ${{ github.event_name }} · ${{ github.ref_name }}"
 
 on:
   workflow_dispatch:
