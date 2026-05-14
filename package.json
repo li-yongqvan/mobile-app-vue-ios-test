@@ -1,0 +1,29 @@
+{
+  "name": "mobile_app_vue",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:ios": "vite build --mode ios",
+    "sync:ios": "npx cap sync ios",
+    "copy:ios": "npx cap copy ios",
+    "open:ios": "npx cap open ios",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.3.0",
+    "@capacitor/core": "^8.3.0",
+    "@capacitor/ios": "^8.3.3",
+    "axios": "^1.14.0",
+    "pinia": "^3.0.4",
+    "vue": "^3.5.30",
+    "vue-router": "^5.0.4"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.3.0",
+    "@vitejs/plugin-vue": "^6.0.5",
+    "vite": "^8.0.1"
+  }
+}

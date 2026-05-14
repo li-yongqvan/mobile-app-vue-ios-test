@@ -1,0 +1,206 @@
+name: iOS Simulator Smoke
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+  schedule:
+    - cron: "0 2,14 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-simulator-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios-simulator-smoke:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      IOS_SCHEME: App
+      IOS_PROJECT: ios/App/App.xcodeproj
+      IOS_DERIVED_DATA: ${{ github.workspace }}/build/DerivedData
+      IOS_APP_BUNDLE_ID: com.police.exam
+      IOS_SIMULATOR_NAME: iPhone 16
+      IOS_SIMULATOR_RUNTIME_PREFIX: com.apple.CoreSimulator.SimRuntime.iOS-18
+      IOS_API_BASE_URL: ${{ secrets.IOS_API_BASE_URL != '' && secrets.IOS_API_BASE_URL || 'http://114.132.68.81:8000/api' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build iOS web assets
+        env:
+          VITE_API_URL: ${{ env.IOS_API_BASE_URL }}
+        run: npm run build:ios
+
+      - name: Sync iOS project
+        run: npm run sync:ios
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+      - name: Prepare logs directory
+        run: |
+          mkdir -p artifacts
+          {
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "api_base_url=${IOS_API_BASE_URL}"
+            echo "simulator_name=${IOS_SIMULATOR_NAME}"
+            echo "simulator_runtime_prefix=${IOS_SIMULATOR_RUNTIME_PREFIX}"
+          } > artifacts/run-metadata.txt
+
+      - name: Show available simulators
+        run: |
+          xcrun simctl list -j devices available > artifacts/simctl-devices.json
+          xcrun simctl list runtimes > artifacts/simctl-runtimes.txt
+          xcrun simctl list devices available > artifacts/simctl-devices.txt
+
+      - name: Boot simulator
+        run: |
+          UDID="$(python3 - <<'PY'
+import json
+import os
+
+preferred_name = os.environ["IOS_SIMULATOR_NAME"]
+runtime_prefix = os.environ["IOS_SIMULATOR_RUNTIME_PREFIX"]
+
+with open("artifacts/simctl-devices.json", "r", encoding="utf-8") as fh:
+    data = json.load(fh)
+
+devices = data.get("devices", {})
+candidates = []
+fallbacks = []
+
+for runtime, items in devices.items():
+    if not runtime.startswith(runtime_prefix):
+        continue
+    for item in items:
+        if not item.get("isAvailable"):
+            continue
+        name = item.get("name", "")
+        udid = item.get("udid", "")
+        score = 2 if name == preferred_name else 1 if name.startswith("iPhone") else 0
+        if score > 0:
+            candidates.append((score, runtime, name, udid))
+
+if not candidates:
+    for runtime, items in devices.items():
+        for item in items:
+            if not item.get("isAvailable"):
+                continue
+            name = item.get("name", "")
+            udid = item.get("udid", "")
+            if name.startswith("iPhone"):
+                fallbacks.append((runtime, name, udid))
+
+if candidates:
+    candidates.sort(key=lambda row: (row[0], row[1], row[2]), reverse=True)
+    print(candidates[0][3])
+elif fallbacks:
+    fallbacks.sort(key=lambda row: (row[0], row[1]), reverse=True)
+    print(fallbacks[0][2])
+PY
+)"
+          if [ -z "$UDID" ]; then
+            echo "Requested simulator not found: ${IOS_SIMULATOR_NAME} (${IOS_SIMULATOR_RUNTIME_PREFIX})" | tee artifacts/simulator-boot.txt
+            exit 1
+          fi
+          echo "SIMULATOR_UDID=$UDID" >> "$GITHUB_ENV"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          {
+            echo "simulator_udid=$UDID"
+            xcrun simctl getenv "$UDID" HOME
+          } > artifacts/simulator-boot.txt
+
+      - name: Build iOS app for simulator
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project "$IOS_PROJECT" \
+            -scheme "$IOS_SCHEME" \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=${SIMULATOR_UDID}" \
+            -derivedDataPath "$IOS_DERIVED_DATA" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            build | tee artifacts/xcodebuild.log
+
+      - name: Install and launch app
+        run: |
+          APP_PATH="$(find "$IOS_DERIVED_DATA/Build/Products" -path "*iphonesimulator/App.app" | head -n 1)"
+          if [ -z "$APP_PATH" ]; then
+            echo "Built app not found" | tee artifacts/launch.txt
+            exit 1
+          fi
+          echo "APP_PATH=$APP_PATH" >> "$GITHUB_ENV"
+          xcrun simctl install "$SIMULATOR_UDID" "$APP_PATH"
+          xcrun simctl launch "$SIMULATOR_UDID" "$IOS_APP_BUNDLE_ID" | tee artifacts/launch.txt
+          sleep 25
+
+      - name: Capture simulator evidence
+        if: always()
+        run: |
+          xcrun simctl io "$SIMULATOR_UDID" screenshot artifacts/ios-simulator.png || true
+          xcrun simctl spawn "$SIMULATOR_UDID" log collect --output /tmp/app-logarchive.logarchive || true
+          if [ -d /tmp/app-logarchive.logarchive ]; then
+            mv /tmp/app-logarchive.logarchive artifacts/app-simulator.logarchive
+          fi
+          {
+            echo "=== simctl listapps ==="
+            xcrun simctl listapps "$SIMULATOR_UDID" || true
+            echo
+            echo "=== launchctl print gui ==="
+            xcrun simctl spawn "$SIMULATOR_UDID" launchctl print "gui/$(id -u)" || true
+          } > artifacts/ios-simulator-runtime.txt
+
+      - name: Shutdown simulator
+        if: always()
+        run: xcrun simctl shutdown "$SIMULATOR_UDID" || true
+
+      - name: Upload iOS build logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-logs
+          path: |
+            artifacts/xcodebuild.log
+            artifacts/run-metadata.txt
+          retention-days: 5
+
+      - name: Upload simulator screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-screenshot
+          path: artifacts/ios-simulator.png
+          retention-days: 5
+
+      - name: Upload simulator logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-logs
+          path: |
+            artifacts/launch.txt
+            artifacts/simctl-runtimes.txt
+            artifacts/simctl-devices.txt
+            artifacts/simulator-boot.txt
+            artifacts/ios-simulator-runtime.txt
+            artifacts/app-simulator.logarchive
+          if-no-files-found: warn
+          retention-days: 5

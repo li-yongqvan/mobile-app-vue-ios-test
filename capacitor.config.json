@@ -1,0 +1,13 @@
+{
+  "appId": "com.police.exam",
+  "appName": "警务实战系统",
+  "webDir": "dist",
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  },
+  "server": {
+    "cleartext": true
+  }
+}
