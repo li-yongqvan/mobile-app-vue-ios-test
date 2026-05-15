@@ -1,50 +1,58 @@
 # GitHub Actions iOS 验证说明
 
 ## 目标
-- 在公开 GitHub 仓库中验证 Web 构建稳定
-- 在 `macos-latest` runner 上验证 iOS 工程可构建
-- 在 iOS Simulator 中拉起 App，并保留截图与日志
+
+GitHub Actions 当前只负责验证仓库构建稳定性：
+
+- Ubuntu runner 验证 Web 构建和 iOS Web 资源构建
+- macOS runner 验证 Capacitor iOS 工程可以完成模拟器 Debug build
+
+当前阶段不在 CI 中做真机签名、不生成可安装 IPA、不发布 TestFlight。真机测试请使用 [README_IOS_LOCAL.md](README_IOS_LOCAL.md) 中的本地 Xcode 流程。
 
 ## 已提供的工作流
+
 - `.github/workflows/build-web.yml`
 - `.github/workflows/ios-build-sync.yml`
 
-## 你需要在 GitHub 仓库里配置的 Secrets
+## GitHub Secrets
+
+需要配置：
+
 - `IOS_API_BASE_URL`
+
+可预留给后续登录链路扩展：
+
 - `TEST_USERNAME`
 - `TEST_PASSWORD`
 
 说明：
-- 当前工作流已经会使用 `IOS_API_BASE_URL`
-- `TEST_USERNAME` 和 `TEST_PASSWORD` 先保留给后续登录链路扩展
-- 目前不会把测试账号写进公开仓库
+
+- `IOS_API_BASE_URL` 会注入 `npm run build:ios`
+- 当前 workflow 不会把测试账号写进公开仓库
+- 当前 workflow 使用 Node.js 24 和 npm 官方 registry
 
 ## 建议操作顺序
-1. 把当前项目内容推到公开仓库
-2. 在 GitHub 网页里进入仓库的 `Settings > Secrets and variables > Actions`
+
+1. 推送代码到 `main`
+2. 在 GitHub 仓库进入 `Settings > Secrets and variables > Actions`
 3. 新建 `IOS_API_BASE_URL`
-4. 可同时创建 `TEST_USERNAME` 和 `TEST_PASSWORD`
-5. 在仓库 `Actions` 页面启用 workflow
-6. 先手动运行：
+4. 到 `Actions` 页面手动运行或等待 push 触发：
    - `Build Web Assets`
-   - `iOS Simulator Smoke`
-7. 先看 `ios-build-logs`、`ios-simulator-screenshot`、`ios-simulator-logs`
-8. 首轮稳定后再保留定时运行
+   - `iOS Build Sync`
+5. 确认两个 workflow 都是 success
+6. 本地真机测试前，先以最新 `main` 为准
 
-## 当前触发方式
-- `workflow_dispatch`
-- `push` 到 `main` 或 `master`
-- `schedule`：每天两次
+## 当前成功标准
 
-## 当前稳定性证明标准
-- iOS 构建成功
-- 模拟器可启动
-- App 可安装并拉起
-- 有截图
-- 有构建日志
-- 有模拟器运行日志
+- `npm ci` 成功
+- `npm run build:web` 成功
+- `npm run build:ios` 成功
+- `npm run sync:ios` 成功
+- `xcodebuild` 在 iOS Simulator SDK 下 Debug build 成功
 
 ## 重要限制
-- 这是 GitHub-hosted runners 上的模拟器验证，不是真机验证
-- 当前阶段不包含完整 UI 自动化点击登录
-- 如果后续要补登录流，可以在现有工作流基础上继续扩展
+
+- CI 构建使用 `CODE_SIGNING_ALLOWED=NO`，不能代表真机签名成功
+- CI 目标是 iOS Simulator，不会安装到 iPhone 真机
+- 免费 Apple ID 的 Personal Team 只适合本地 Xcode 自动签名，不适合放进公开仓库或 CI
+- 后续如果要生成真机 IPA 或 TestFlight，需要改用付费 Apple Developer Program，并新增证书、profile 和 GitHub secrets

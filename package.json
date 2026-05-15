@@ -8,6 +8,7 @@
     "build": "vite build",
     "build:web": "vite build --outDir dist-web",
     "build:ios": "vite build --mode ios",
+    "prepare:ios": "npm run build:ios && npm run sync:ios",
     "sync:ios": "npx cap sync ios",
     "copy:ios": "npx cap copy ios",
     "open:ios": "npx cap open ios",
